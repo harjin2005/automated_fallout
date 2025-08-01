@@ -1,0 +1,213 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Fallout Room - Document Editor</title>
+    <script src="https://cdn.quilljs.com/1.3.6/quill.js"></script>
+    <link href="https://cdn.quilljs.com/1.3.6/quill.snow.css" rel="stylesheet">
+    <style>
+        body { 
+            font-family: 'Courier New', monospace; 
+            margin: 0; 
+            padding: 20px; 
+            background: linear-gradient(135deg, #0a0a0a 0%, #1a1a2e 50%, #16213e 100%); 
+            color: #00ff41; 
+        }
+        .editor-container { 
+            max-width: 1200px; 
+            margin: 0 auto; 
+            background: rgba(0, 255, 65, 0.05); 
+            padding: 30px; 
+            border-radius: 15px; 
+            border: 1px solid #00ff41; 
+        }
+        .document-header { 
+            background: rgba(0, 255, 65, 0.1); 
+            padding: 20px; 
+            border-radius: 8px; 
+            margin-bottom: 30px; 
+            border-left: 4px solid #00ff41; 
+        }
+        .document-header h1 { 
+            margin: 0 0 10px 0; 
+            color: #00ff41; 
+            text-shadow: 0 0 10px #00ff41; 
+        }
+        .document-header p { 
+            margin: 5px 0; 
+            color: #ccc; 
+        }
+        .editor { 
+            height: 400px; 
+            background: white; 
+            border: 1px solid #00ff41; 
+            border-radius: 8px; 
+        }
+        .action-buttons { 
+            margin-top: 30px; 
+            text-align: center; 
+        }
+        .btn { 
+            padding: 12px 24px; 
+            margin: 8px; 
+            border: none; 
+            border-radius: 25px; 
+            cursor: pointer; 
+            font-size: 14px; 
+            font-weight: bold; 
+            text-transform: uppercase; 
+            letter-spacing: 1px; 
+            transition: all 0.3s ease; 
+            text-decoration: none;
+            display: inline-block;
+        }
+        .btn-primary { 
+            background: linear-gradient(45deg, #00ff41, #00cc33); 
+            color: #000; 
+        }
+        .btn-success { 
+            background: linear-gradient(45deg, #28a745, #34ce57); 
+            color: white; 
+        }
+        .btn-secondary { 
+            background: linear-gradient(45deg, #6c757d, #8a8a8a); 
+            color: white; 
+        }
+        .btn-warning { 
+            background: linear-gradient(45deg, #ffc107, #ffdb4d); 
+            color: #000; 
+        }
+        .btn:hover { 
+            transform: scale(1.05); 
+            box-shadow: 0 0 20px rgba(0, 255, 65, 0.3); 
+        }
+        .status { 
+            padding: 15px; 
+            border-radius: 8px; 
+            margin: 10px 0; 
+            text-align: center; 
+            font-weight: bold; 
+        }
+        .status.success { 
+            background: rgba(40, 167, 69, 0.2); 
+            color: #28a745; 
+            border: 1px solid #28a745; 
+        }
+        .status.error { 
+            background: rgba(220, 53, 69, 0.2); 
+            color: #dc3545; 
+            border: 1px solid #dc3545; 
+        }
+    </style>
+</head>
+<body>
+    {% csrf_token %}
+    <div class="editor-container">
+        <div class="document-header">
+            <h1>📄 FALLOUT ROOM - DOCUMENT EDITOR</h1>
+            <p><strong>Action:</strong> {{ action.title }}</p>
+            <p><strong>Responsible:</strong> {{ action.operator }}</p>
+            <p><strong>Incident:</strong> {{ incident.title }}</p>
+            <p><strong>Status:</strong> <span id="status">Ready to Edit</span></p>
+        </div>
+        
+        <div id="editor" class="editor"></div>
+        
+        <div class="action-buttons">
+            <button class="btn btn-warning" onclick="loadOriginal()">🔄 Reset to Original</button>
+            <button class="btn btn-primary" onclick="saveDocument()">💾 Save Changes</button>
+            <button class="btn btn-success" onclick="downloadPDF()">📄 Download PDF</button>
+            <a href="/admin/incident_response/deliverable/" class="btn btn-secondary">← Back to Admin</a>
+        </div>
+        
+        <div id="message" class="status" style="display: none;"></div>
+    </div>
+
+    <script>
+        let quill;
+        let deliverableId = parseInt('{{ deliverable_id }}');
+        let originalContent = '{{ deliverable.content|escapejs }}';
+
+
+        function initEditor() {
+            quill = new Quill('#editor', {
+                theme: 'snow',
+                modules: {
+                    toolbar: [
+                        [{ 'header': [1, 2, 3, false] }],
+                        ['bold', 'italic', 'underline', 'strike'],
+                        [{ 'list': 'ordered'}, { 'list': 'bullet' }],
+                        ['blockquote', 'code-block'],
+                        ['link'],
+                        [{ 'color': [] }, { 'background': [] }],
+                        ['clean']
+                    ]
+                }
+            });
+            loadOriginal();
+        }
+
+        function loadOriginal() {
+            let cleanContent = originalContent.replace(/🤖[\s\S]*?:\n/, '');
+            quill.root.innerHTML = cleanContent.replace(/\n/g, '<br>');
+            showMessage('Original content loaded', 'success');
+        }
+
+        function getCookie(name) {
+            let cookieValue = null;
+            if (document.cookie && document.cookie !== '') {
+                const cookies = document.cookie.split(';');
+                for (let i = 0; i < cookies.length; i++) {
+                    const cookie = cookies[i].trim();
+                    if (cookie.substring(0, name.length + 1) === (name + '=')) {
+                        cookieValue = decodeURIComponent(cookie.substring(name.length + 1));
+                        break;
+                    }
+                }
+            }
+            return cookieValue;
+        }
+
+        function saveDocument() {
+            const content = quill.root.innerHTML;
+            const csrftoken = getCookie('csrftoken');
+            
+            fetch(`/api/save-document/${deliverableId}/`, {
+                method: 'POST',
+                headers: { 
+                    'Content-Type': 'application/json',
+                    'X-CSRFToken': csrftoken
+                },
+                body: JSON.stringify({ content: content })
+            })
+            .then(response => response.json())
+            .then(data => {
+                if (data.success) {
+                    showMessage('✅ Document saved successfully!', 'success');
+                    document.getElementById('status').textContent = 'Saved';
+                } else {
+                    showMessage('❌ Error: ' + data.error, 'error');
+                }
+            })
+            .catch(error => {
+                showMessage('❌ Error: ' + error.message, 'error');
+            });
+        }
+
+        function downloadPDF() {
+            const url = `/api/download-pdf/${deliverableId}/`;
+            window.open(url, '_blank');
+            showMessage('📄 PDF download started', 'success');
+        }
+
+        function showMessage(text, type) {
+            const messageDiv = document.getElementById('message');
+            messageDiv.textContent = text;
+            messageDiv.className = `status ${type}`;
+            messageDiv.style.display = 'block';
+            setTimeout(() => messageDiv.style.display = 'none', 4000);
+        }
+
+        window.onload = initEditor;
+    </script>
+</body>
+</html>
